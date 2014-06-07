@@ -18,8 +18,6 @@ var notes = []
 var usernames = []
 var isInitNotes = false
 var socketCount = 0
-var user_id
-var username
 
 function parseCookies(request){
         var result={};
@@ -32,7 +30,20 @@ function parseCookies(request){
         return sessionId;
     }
 
+function exists(x, toSearch) {
+    var results = []
+for(var i=0; i<x.length; i++) {
+  for(key in x[i]) {
+    if(x[i][key].indexOf(toSearch)!=-1) {
+      results.push(x[i]);
+    }
+  }
+}
+return results;
+}
+
 io.sockets.on('connection', function(socket){
+    
     var rcookie = socket.handshake.headers['cookie'];
     var cookies = parseCookies(rcookie)
     var cookies = unescape(cookies)
@@ -41,18 +52,35 @@ io.sockets.on('connection', function(socket){
     db.query('SELECT * FROM ci_sessions WHERE session_id="' + session.session_id + '" LIMIT 1')
         .on('result', function(data) {
             var userdata = PHPUnserialize.unserialize(data.user_data)
-            user_id = userdata.user_id
-            socket.user_id = user_id
-            username = userdata.username
-            socket.username = username
+            socket.user_id = userdata.user_id
+            socket.username = userdata.username
+
+            if(exists(usernames, socket.username)=="") {
+            var data = new Object()
+            data.username = socket.username
+            usernames.push(data)
+
+            io.sockets.emit('usernames connected', usernames )
+            console.log(usernames)
+        }
         })
+
    
     socketCount++
-    io.sockets.emit('users connected', socketCount)
- 
+    io.sockets.emit('users connected', socketCount )
+    
+
     socket.on('disconnect', function() {
         socketCount--
+        
+        for (var i = 0; i < usernames.length; i++)
+            if (usernames[i].username === socket.username) { 
+        usernames.splice(i, 1);
+        break;
+    }
+     
         io.sockets.emit('users connected', socketCount)
+        io.sockets.emit('usernames connected', usernames )
     })
  
     socket.on('new note', function(data){
@@ -65,25 +93,25 @@ io.sockets.on('connection', function(socket){
         console.log(data)
     })
  
-    // Check to see if initial query/notes are set
+
+
+
     if (! isInitNotes) {
-        // Initial app start, run db query
+
         db.query('SELECT messages.*,users.username FROM messages LEFT JOIN users ON messages.user_id = users.id')
             .on('result', function(data){
-                // Push results onto the notes array
+
                 notes.push(data)
-                // console.log(data)
             })
             .on('end', function(){
-                // Only emit notes after query has been completed
+
                 socket.emit('initial notes', notes)
             })
  
         isInitNotes = true
     } else {
-        // Initial notes already exist, send out
+
         socket.emit('initial notes', notes)
-        // console.log(notes)
     }
 
 })
